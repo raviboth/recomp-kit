@@ -241,12 +241,29 @@ void ui_layer_extract(HostFrameHandle f, int guest_w, int guest_h, const UiFrame
     }
     const HostSurfaceId target = host_frame_render_surface(f);
     const HostSurfaceId cursor = host_cursor_surface();
+    // A software cursor saves the pixels under it by copying from the render
+    // target into a spare surface, then copies them back to erase itself. The
+    // host renders 3D on the GPU, so that spare holds stale guest memory, and
+    // replaying the restore drew a blank box where the cursor had been (level
+    // select). Remember surfaces filled from the target; the compositor
+    // redraws the scene, so their copies back are not UI.
+    static std::set<HostSurfaceId> saved_from_target;
     std::vector<const HostBlitRecord *> records;
     const uint32_t count = host_frame_record_count(f);
     for (uint32_t i = 0; i < count; ++i) {
         const auto *r = host_frame_record(f, i);
-        if (r && target != HOST_SURFACE_NONE && r->dst == target && !r->is_upload && r->w > 0 &&
-            r->h > 0)
+        if (!r || target == HOST_SURFACE_NONE)
+            continue;
+        if (r->dst != target && r->dst != HOST_SURFACE_NONE) {
+            // Filled from anything else, the surface holds content of its own.
+            if (r->src.surface == target)
+                saved_from_target.insert(r->dst);
+            else
+                saved_from_target.erase(r->dst);
+            continue;
+        }
+        if (r->dst == target && !r->is_upload && r->w > 0 && r->h > 0 &&
+            !saved_from_target.count(r->src.surface))
             records.push_back(r);
     }
     std::stable_sort(records.begin(), records.end(),
