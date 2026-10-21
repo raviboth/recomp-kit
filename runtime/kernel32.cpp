@@ -1306,6 +1306,9 @@ void win32_reset_command_line_for_test() {
     kernel32_wide_reset_command_line();
     g_cmdline_addr = 0;
 }
+// Open sched_atomic_enter stretches on this thread (defined with the scheduler).
+extern __thread uint32_t t_atomic;
+
 namespace {
 
 // The environment block is a run of NUL-terminated strings ended by an extra
@@ -1543,7 +1546,33 @@ void k_GetTickCount(X86 *c) {
     // The cadence trace's main signal: this game's frame limiter spins here,
     // so the interval between these calls is the shape of the main loop.
     host_note_cadence("GetTickCount");
-    const uint32_t now = host_millis();
+    uint32_t now = host_millis();
+    // When the native draw-loop pacing did not engage (draw_deadline == 0), the
+    // front-end frame limiter busy-waits here: it reads this clock in a tight
+    // loop until the millisecond advances, pegging a whole core. The once-per-ms
+    // sched_checkpoint yield passes the baton but never relinquishes the OS core,
+    // so the spin stays hot and the input/audio service threads only ever get a
+    // thin slice (felt as menu lag, heard as audio stutter). Detect the spin by
+    // repeated polls that observe no time passing, and replace it with a bounded
+    // cooperative sleep: the guest is only waiting for the clock to move, so this
+    // changes no observed time while freeing the core for the service threads.
+    // Never inside an atomic stretch: the sleep passes the baton, and the
+    // stretch exists so that no other guest thread runs until it ends.
+    if (!draw_deadline && !t_atomic) {
+        static thread_local uint32_t last_ms = 0;
+        static thread_local uint32_t same_ms_polls = 0;
+        if (now == last_ms) {
+            if (++same_ms_polls >= 16) {
+                sched_sleep_ms(1);
+                now = host_millis();
+                last_ms = now;
+                same_ms_polls = 0;
+            }
+        } else {
+            last_ms = now;
+            same_ms_polls = 0;
+        }
+    }
     // The fractional native deadline has already paced this frame. Retiring
     // only this draw wait prevents the guest's integer-millisecond deadline
     // from adding another wait. Every caller still receives real host time.

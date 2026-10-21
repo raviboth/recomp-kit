@@ -3830,11 +3830,11 @@ static void test_same_frame_legacy_pixels(D3DRenderer *renderer) {
     std::vector<uint16_t> reference;
     for (bool legacy : {true, false}) {
         renderer->discard();
-        host_d3d_reset_coherence();
         if (legacy)
             os_setenv("RECOMP_LEGACY_WRITEBACK", "1");
         else
             os_unsetenv("RECOMP_LEGACY_WRITEBACK");
+        host_d3d_reset_coherence();
         renderer->setSceneWidth(legacy ? 0 : 256, legacy ? 0 : 192);
         Surface surface(805, 128, 96);
         host_d3d_bind_generation(&surface.desc, 1, 8005);
@@ -3927,6 +3927,7 @@ static void test_same_frame_legacy_pixels(D3DRenderer *renderer) {
     }
     g_t5_legacy_frame = 0;
     os_unsetenv("RECOMP_LEGACY_WRITEBACK");
+    host_d3d_reset_coherence();
     renderer->setSceneWidth(0, 0);
     renderer->discard();
 }
