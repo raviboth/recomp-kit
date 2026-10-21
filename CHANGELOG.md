@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Cut host work in guest polling loops. PeekMessage pumps audio and window
+  presents at most once per `RECOMP_PEEK_PUMP_US` (default 1000), a
+  GetTickCount spin that sees no time pass sleeps 1 ms cooperatively, and the
+  SDL idle service pumps events at most every 4 ms.
+
 - Allow native game adapters to place their own cursors at absolute touch
   positions in logical game pixels. Placement can discard pending DirectInput
   X/Y movement without losing button, wheel or keyboard input.
