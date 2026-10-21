@@ -241,30 +241,49 @@ void ui_layer_extract(HostFrameHandle f, int guest_w, int guest_h, const UiFrame
     }
     const HostSurfaceId target = host_frame_render_surface(f);
     const HostSurfaceId cursor = host_cursor_surface();
-    // A software cursor saves the pixels under it by copying from the render
-    // target into a spare surface, then copies them back to erase itself. The
-    // host renders 3D on the GPU, so that spare holds stale guest memory, and
-    // replaying the restore drew a blank box where the cursor had been (level
-    // select). Remember surfaces filled from the target; the compositor
-    // redraws the scene, so their copies back are not UI.
-    static std::set<HostSurfaceId> saved_from_target;
+    // A software cursor saves the pixels under it by copying a rectangle of
+    // the render target into a spare surface, then writes them back (by blit
+    // or a CPU lock) to erase itself. The host renders 3D on the GPU, so what
+    // was saved is stale guest memory, and replaying the write-back drew a box
+    // of old pixels where the cursor had been (level select). The compositor
+    // redraws the scene anyway: a write to the target that lands on a
+    // rectangle saved from it in this frame or the last few is not UI.
+    struct Saved {
+        int32_t x, y, w, h;
+        uint32_t frame;
+    };
+    static std::vector<Saved> saved;
+    static uint32_t frame_no = 0;
+    ++frame_no;
+    saved.erase(std::remove_if(saved.begin(), saved.end(),
+                               [](const Saved &v) { return frame_no - v.frame > 4; }),
+                saved.end());
     std::vector<const HostBlitRecord *> records;
     const uint32_t count = host_frame_record_count(f);
+    // Saves first: a moving cursor's write lands on the rectangle it saves
+    // later in the same frame.
     for (uint32_t i = 0; i < count; ++i) {
         const auto *r = host_frame_record(f, i);
-        if (!r || target == HOST_SURFACE_NONE)
+        if (r && target != HOST_SURFACE_NONE && r->dst != target && r->src.surface == target &&
+            r->w > 0 && r->h > 0)
+            saved.push_back({r->src_x, r->src_y, r->w, r->h, frame_no});
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto *r = host_frame_record(f, i);
+        if (!r || target == HOST_SURFACE_NONE || r->dst != target)
             continue;
-        if (r->dst != target && r->dst != HOST_SURFACE_NONE) {
-            // Filled from anything else, the surface holds content of its own.
-            if (r->src.surface == target)
-                saved_from_target.insert(r->dst);
-            else
-                saved_from_target.erase(r->dst);
+        if (r->is_upload || r->w <= 0 || r->h <= 0)
             continue;
+        if (r->src.surface != cursor) {
+            auto restore = std::find_if(saved.begin(), saved.end(), [r](const Saved &v) {
+                return v.x == r->dst_x && v.y == r->dst_y && v.w == r->w && v.h == r->h;
+            });
+            if (restore != saved.end()) {
+                saved.erase(restore);
+                continue;
+            }
         }
-        if (r->dst == target && !r->is_upload && r->w > 0 && r->h > 0 &&
-            !saved_from_target.count(r->src.surface))
-            records.push_back(r);
+        records.push_back(r);
     }
     std::stable_sort(records.begin(), records.end(),
                      [](const auto *a, const auto *b) { return a->seq < b->seq; });

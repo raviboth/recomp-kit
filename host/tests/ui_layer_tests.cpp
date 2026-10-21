@@ -184,6 +184,33 @@ static void test_cursor_and_hud_flags() {
     CHECK(b.balanced());
 }
 
+// A software cursor writes stale pixels onto the rectangle it then saves
+// from the render target, and draws itself there. Only the cursor is UI; a
+// write elsewhere still is.
+static void test_cursor_save_under_is_not_ui() {
+    test_frame_builder b;
+    b.cursor_surface = 9;
+    for (auto src : {1u, 5u, 9u})
+        solid(b, src);
+    b.blit(5, 30, 40, 16, 16);        // the write-back of what was saved
+    auto &save = b.blit(1, 0, 0, 16, 16); // target -> spare surface 7
+    save.dst = 7;
+    save.src_x = 30;
+    save.src_y = 40;
+    b.blit(9, 30, 40, 16, 16);  // the cursor
+    b.blit(5, 200, 40, 16, 16); // unrelated UI
+    UiFrame out{};
+    ui_layer_extract(b.frame, 640, 480, nullptr, &out);
+    CHECK(out.elements.size() == 2);
+    CHECK(std::count_if(out.elements.begin(), out.elements.end(),
+                        [](const UiElement &e) { return e.is_cursor; }) == 1);
+    CHECK(std::any_of(out.elements.begin(), out.elements.end(),
+                      [](const UiElement &e) { return !e.is_cursor && e.x == 200; }));
+    CHECK(std::none_of(out.elements.begin(), out.elements.end(),
+                       [](const UiElement &e) { return !e.is_cursor && e.x == 30; }));
+    CHECK(b.balanced());
+}
+
 static void test_connectivity_uses_records() {
     test_frame_builder b;
     solid(b, 4);
@@ -404,6 +431,7 @@ int main() {
         {"identity match and split", test_identity_match_and_split},
         {"per-element keys, revisions and palettes", test_replay_per_element_with_key_and_palette},
         {"cursor and HUD flags", test_cursor_and_hud_flags},
+        {"cursor save-under is not UI", test_cursor_save_under_is_not_ui},
         {"record connectivity and holes", test_connectivity_uses_records},
         {"movie bypass and UI transitions", test_movie_bypasses_ui_and_clears_previous},
         {"CPU pitch, RGB565 and destination coverage", test_cpu_pitch_rgb565_and_coverage},
