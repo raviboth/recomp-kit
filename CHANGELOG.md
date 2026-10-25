@@ -7,6 +7,10 @@
   GetTickCount spin that sees no time pass sleeps 1 ms cooperatively, and the
   SDL idle service pumps events at most every 4 ms.
 
+- Group a frame's UI blit records with a left-to-right sweep instead of
+  testing every pair. Menus with hundreds of small blits no longer stall
+  the presenter.
+
 - Allow native game adapters to place their own cursors at absolute touch
   positions in logical game pixels. Placement can discard pending DirectInput
   X/Y movement without losing button, wheel or keyboard input.
@@ -115,7 +119,7 @@
 
 - On-screen controls replace the split keypad. Every game now starts with a
   PlayStation-styled gamepad as well as the keyboard: two sticks, a dpad,
-  ✕○□△, shoulders and triggers, start and select, drawn over the game. A
+  âœ•â—‹â–¡â–³, shoulders and triggers, start and select, drawn over the game. A
   tab cycles between the `pad`, `keys` and `pad+keys` layouts and a Hidden
   slot, and the F10 page carries the layout, its size, its opacity, button
   haptics and whether the pad stays on screen when a controller is
@@ -154,10 +158,10 @@
   comes back out. Otherwise the pad is mapped to keys and the mouse, with a
   per-game table under `[controls.mapped]`.
 
-- `game.toml` gains a `[controls]` section — `default_layout`, `pad`, and
-  the `[controls.mapped]` and `[controls.native]` tables — which replaces
-  `[touch] keypad`. The old spelling is still read (`"auto"` → `"keys"`,
-  `"hidden"` → `"hidden"`) so no game repo has to be re-pinned at once.
+- `game.toml` gains a `[controls]` section â€” `default_layout`, `pad`, and
+  the `[controls.mapped]` and `[controls.native]` tables â€” which replaces
+  `[touch] keypad`. The old spelling is still read (`"auto"` â†’ `"keys"`,
+  `"hidden"` â†’ `"hidden"`) so no game repo has to be re-pinned at once.
   One behaviour change: `[touch] keypad = "hidden"` used to hide the two
   halves but keep their KEYS tabs on screen; it now selects the Hidden
   layout and draws nothing. No game in the kit sets it.
@@ -1462,7 +1466,7 @@
   macOS loads its `.so` or `.dll` counterpart unchanged.
 - CI compiles and tests the portable layers on macOS, Ubuntu and Windows.
 
-## 2026-09-12 — Initial native source release
+## 2026-09-12 â€” Initial native source release
 
 - Publish the macOS native runtime, static translator, Metal renderer and C/Lua
   mod API as a standalone contributor project.
